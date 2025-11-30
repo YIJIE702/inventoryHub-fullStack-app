@@ -1,0 +1,107 @@
+@page "/fetchproducts"
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<h3>Product List</h3>
+
+<ul>
+   @if (isLoading)
+    {
+        <li>Loading...</li>
+    }
+   else if (loadError != null)
+    {
+        <li style="color:crimson">Error: @loadError</li>
+    }
+   else if (products?.Length == 0)
+    {
+        <li>No products found.</li>
+    }
+    else
+    {
+        foreach (var p in products)
+        {
+            <li>@p.Name - @p.Price.ToString("C") (@p.Category.Name) — Stock: @p.Stock</li>
+        }
+    }
+</ul>
+
+@code {
+    private Product[]? products;
+    private bool isLoading = true;
+    private string? loadError;
+    private static readonly string localStorageKey = "inventoryhub_products_v1";
+    private static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Avoid redundant network calls: check localStorage first
+        try
+        {
+            var cached = await JS.InvokeAsync<string?>("localStorage.getItem", localStorageKey);
+            if (!string.IsNullOrEmpty(cached))
+            {
+                products = JsonSerializer.Deserialize<Product[]>(cached, jsonOptions);
+            }
+        }
+        catch
+        {
+            // ignore localStorage errors and continue to fetch
+        }
+
+        if (products == null)
+        {
+            await FetchFromApiAsync();
+        }
+
+        isLoading = false;
+    }
+
+    private async Task FetchFromApiAsync()
+    {
+        try
+        {
+            // Use a relative path that matches the backend endpoint
+            var response = await Http.GetAsync("/api/productlist");
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
+
+            // Deserialize with error handling for malformed JSON
+            products = JsonSerializer.Deserialize<Product[]>(json, jsonOptions);
+
+            // Cache to localStorage for short-term reuse to avoid redundant calls
+            try
+            {
+                var serial = JsonSerializer.Serialize(products);
+                await JS.InvokeVoidAsync("localStorage.setItem", localStorageKey, serial);
+            }
+            catch
+            {
+                // ignore local storage write errors
+            }
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+            products = Array.Empty<Product>();
+        }
+    }
+
+    public class Product
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = default!;
+        public double Price { get; set; }
+        public int Stock { get; set; }
+        public Category Category { get; set; } = new Category();
+    }
+
+    public class Category
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+}
