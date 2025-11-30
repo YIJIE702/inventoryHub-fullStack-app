@@ -1,4 +1,4 @@
-# InventoryHub - FullStack Sample Submission
+# InventoryHub - FullStack
 
 ---
 
